@@ -1,0 +1,81 @@
+@()
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <title>The Back Pressure Experiment</title>
+  </head>
+  <body>
+
+    <div>
+      <input type="file" id="file" name="file" />
+      <button id="upload">Upload</button>
+      <span id="progress"></span>
+    </div>
+    <div>
+      <textarea id="status" cols="120" rows="20" readonly></textarea>
+    </div>
+
+    <script type="text/javascript">
+      function log(msg) {
+        var statusBox = document.getElementById('status')
+        statusBox.value = statusBox.value + "\n" + msg;
+        statusBox.scrollTop = statusBox.scrollHeight;
+      }
+
+      if (window.File && window.FileReader && window.FileList && window.Blob) {
+
+        document.getElementById('upload').addEventListener('click', function(evt) {
+          var file = document.getElementById('file').files[0],
+            position = 0,
+            chunkSize = 4096,
+            fileReader = new FileReader();
+
+          var uploadSocket = new WebSocket("ws://localhost:9000/upload");
+
+          uploadSocket.onerror = function(error) {
+            log(error);
+          };
+
+          uploadSocket.onclose = function(evt) {
+            log("Websocket closed");
+          };
+
+          fileReader.onload = function() {
+            if (fileReader.result) {
+              log("Sending " + fileReader.result.byteLength + " bytes to server");
+              uploadSocket.send(fileReader.result);
+              position += fileReader.result.byteLength;
+              log(Math.round((position / file.size) * 100) + "% done");
+              log("Waiting for ack to push next chunk");
+            }
+          };
+
+          uploadSocket.onmessage = function(message) {
+            if (message.data == "next") {
+              if (position < file.size) {
+                log("Reading slice");
+                var slice = file.slice(position, Math.min(position + chunkSize, file.size));
+                fileReader.readAsArrayBuffer(slice);
+
+              } else {
+                log("Done");
+                uploadSocket.close();
+              }
+            }
+          }
+
+        });
+
+
+      } else {
+        alert('The File APIs are not fully supported in this browser.');
+      }
+
+    </script>
+
+
+  </body>
+</html>
+
